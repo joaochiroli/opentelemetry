@@ -1,0 +1,221 @@
+.
+
+appName: "sfz-observabilidade-chart"
+namespace: "observabilidade"
+stack: "observabilidade"
+otlp:
+  enabled: false
+  mode: daemonset
+  command:
+    name: "otelcol-contrib"
+    extraArgs: []
+  resources:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 500Mi
+  image:
+    repository: "projeto/opentelemetry-collector-contrib"
+    pullPolicy: "Always"
+    tag: "0.111.0"
+  config:
+    exporters:
+      prometheus:
+        endpoint: "0.0.0.0:8889" 
+        send_timestamps: true
+        metric_expiration: 180m
+        enable_open_metrics: true
+        add_metric_suffixes: false
+        resource_to_telemetry_conversion:
+          enabled: true
+      prometheusremotewrite:
+        endpoint: "https://prometheus.desenv.k8s.al.gov.br/api/v1/write" 
+        timeout: 30s
+        resource_to_telemetry_conversion:
+          enabled: true
+        tls:
+          insecure: true
+          insecure_skip_verify: true
+      debug: 
+        verbosity: detailed
+        sampling_initial: 5
+        sampling_thereafter: 200
+      otlp:
+        endpoint: "sfz-observabilidade-jaeger-collector.observabilidade.svc.cluster.local:4317"
+        tls:
+          insecure: true
+    extensions:
+      health_check:
+        endpoint: ${env:MY_POD_IP}:13133
+    processors:
+      batch:  
+        timeout: 10s
+        send_batch_size: 512
+      memory_limiter:
+        check_interval: 5s
+        limit_mib: 1536
+        spike_limit_mib: 384
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: "0.0.0.0:4317"
+          http:
+            endpoint: "0.0.0.0:4318"
+    service:
+      pipelines:
+        metrics:
+          exporters:
+            - prometheus
+            - debug
+            - prometheusremotewrite
+          processors:
+            - batch
+          receivers:
+            - otlp
+        traces:
+          exporters:
+            - debug
+            - otlp
+          processors:
+            - batch
+          receivers:
+            - otlp
+  service:
+    enabled: true
+    type: ClusterIP
+    annotations: {}
+  ports:
+    otlp:
+      enabled: true
+      containerPort: 4317
+      servicePort: 4317
+      hostPort: 4317
+      protocol: TCP
+      # nodePort: 30317
+      appProtocol: grpc
+    otlp-http:
+      enabled: true
+      containerPort: 4318
+      servicePort: 4318
+      hostPort: 4318
+      protocol: TCP
+    jaeger-compact:
+      enabled: true
+      containerPort: 6831
+      servicePort: 6831
+      hostPort: 6831
+      protocol: UDP
+    jaeger-thrift:
+      enabled: true
+      containerPort: 14268
+      servicePort: 14268
+      hostPort: 14268
+      protocol: TCP
+    jaeger-grpc:
+      enabled: true
+      containerPort: 14250
+      servicePort: 14250
+      hostPort: 14250
+      protocol: TCP
+    zipkin:
+      enabled: true
+      containerPort: 9411
+      servicePort: 9411
+      hostPort: 9411
+      protocol: TCP
+    prometheus:
+      enabled: true
+      protocol: TCP
+      containerPort: 8889
+      servicePort: 8889
+prometheus:
+  enabled: true
+    prometheus:
+      enabled: true
+      image:
+        repository: "projeto/prometheus-config-reloader"
+        tag: "v0.77.2"
+        pullPolicy: "Always"
+    resources:
+      limits:
+        cpu: "100m"
+        memory: "128Mi"
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+  server:
+    image:
+      repository: "projeto/prometheus"
+      tag: "v2.54.1"
+      pullPolicy: "Always"
+    env:
+      - name: "storage.tsdb.retention.time"
+        value: "30d"
+      - name: "storage.tsdb.retention.size"
+        value: "3GB"
+      - name: "web.enable-remote-write-receiver"
+        value: "true"
+    extraFlags:
+      - web.enable-remote-write-receiver
+    remote_write:
+      - url: "https://prometheus.desenv.k8s.al.gov.br/api/v1/write"
+    persistentVolume:
+      enabled: true
+      storageClass: "longhorn"
+      size: "3Gi"
+    retention: "30d"
+    retentionSize: "3GB"
+    resources:
+      limits:
+        cpu: 1
+        memory: "2Gi"
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+    ingress:
+      enabled: true
+      pathType: ImplementationSpecific
+      ingressClassName: traefik
+      annotations:
+        traefik.ingress.kubernetes.io/router.tls: "true"
+        ingress.kubernetes.io/auth-secret: "secret-wildcard-ca-interna"
+      hosts:
+        - host: prometheus.al.gov.br
+          paths:
+            - /
+      tls:
+        - hosts:
+          - prometheus.al.gov.br
+          secretName: secret-wildcard-ca-interna
+  prometheus-node-exporter:
+    image:
+      registry: "repositorio-docker.al.gov.br"
+      repository: "projeto/node-exporter"
+      tag: "v1.8.2"
+      pullPolicy: "Always"
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "1Gi"
+      requests:
+        cpu: "200m"
+        memory: "384Mi"
+    revisionHistoryLimit: 1
+    hostNetwork: false
+    service:
+      type: ClusterIP
+      port: 9101
+  kube-state-metrics:
+    image:
+      registry: "repositorio-docker.al.gov.br"
+      repository: "projeto/kube-state-metrics"
+      tag: "v2.13.0"
+      pullPolicy: "Always"
+  prometheus-pushgateway:
+    image:
+      repository: "projeto/pushgateway"
+      tag: "v1.10.0"
+      pullPolicy: "Always"
