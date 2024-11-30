@@ -30,14 +30,6 @@ otlp:
         add_metric_suffixes: false
         resource_to_telemetry_conversion:
           enabled: true
-      prometheusremotewrite:
-        endpoint: "https://prometheus.desenv.k8s.al.gov.br/api/v1/write" 
-        timeout: 30s
-        resource_to_telemetry_conversion:
-          enabled: true
-        tls:
-          insecure: true
-          insecure_skip_verify: true
       debug: 
         verbosity: detailed
         sampling_initial: 5
@@ -70,7 +62,6 @@ otlp:
           exporters:
             - prometheus
             - debug
-            - prometheusremotewrite
           processors:
             - batch
           receivers:
